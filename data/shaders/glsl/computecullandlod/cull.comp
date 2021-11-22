@@ -43,6 +43,8 @@ layout (binding = 2) uniform UBO
 layout (binding = 3) buffer UBOOut
 {
 	uint drawCount;
+	uint occluded;
+	uint primitiveCount;
 	uint lodCount[MAX_LOD_LEVEL + 1];
 } uboOut;
 
@@ -59,6 +61,8 @@ layout (binding = 4) readonly buffer LODs
 	LOD lods[ ];
 };
 
+layout (binding = 5) uniform sampler2D depthPyramid;
+
 layout (local_size_x = 16) in;
 
 bool frustumCheck(vec4 pos, float radius)
@@ -74,6 +78,49 @@ bool frustumCheck(vec4 pos, float radius)
 	return true;
 }
 
+//#define USE_TEXTURE_GRAD
+
+bool occlusionCheck(vec4 pos, float radius)
+{
+	vec4 center = ubo.modelview * pos;
+	float zFar = ubo.projection[3][2] / ubo.projection[2][2];
+	float zNear = ubo.projection[3][2] / (1 + ubo.projection[2][2]);
+
+	if(center.z + radius > -zFar)
+	{
+		return true;
+	}
+
+	const vec2 cx = vec2(center.x, -center.z);
+	const float tx = sqrt(dot(cx, cx) - radius * radius);
+	const vec2 minx = mat2(tx, radius, -radius, tx) * cx;
+	const vec2 maxx = mat2(tx, -radius, radius, tx) * cx;
+
+	const vec2 cy = vec2(center.y, -center.z);
+	const float ty = sqrt(dot(cy, cy) - radius * radius);
+	const vec2 miny = mat2(ty, radius, -radius, ty) * cy;
+	const vec2 maxy = mat2(ty, -radius, radius, ty) * cy;
+
+	vec4 aabb = vec4(minx.x / minx.y * ubo.projection[0][0], miny.x / miny.y * ubo.projection[1][1], maxx.x / maxx.y * ubo.projection[0][0], maxy.x / maxy.y * ubo.projection[1][1]);
+	aabb = aabb.xwzy * 0.5 + vec4(0.5f); // clip space -> uv space
+	
+	const vec2 tc = (aabb.xy + aabb.zw) * 0.5;
+	#ifdef USE_TEXTURE_GRAD
+	vec2 dim = vec2(aabb.z - aabb.x, aabb.w - aabb.y);
+	float depth = textureGrad(depthPyramid, tc, vec2(dim.x, 0), vec2(0.0, dim.y)).x;
+	#else
+	vec2 dim = vec2(aabb.z - aabb.x, aabb.w - aabb.y) * textureSize(depthPyramid, 0);
+	float mipLevel = floor(log2(max(dim.x, dim.y)));
+	float depth = textureLod(depthPyramid, tc, mipLevel).x;
+	#endif
+
+	float sphereClosest = center.z + radius;
+	float sphereDepth = ubo.projection[2][2] * sphereClosest + ubo.projection[3][2];
+	sphereDepth /= -sphereClosest;
+	
+	return sphereDepth < depth;
+}
+
 void main()
 {
 	uint idx = gl_GlobalInvocationID.x + gl_GlobalInvocationID.y * gl_NumWorkGroups.x * gl_WorkGroupSize.x;
@@ -82,6 +129,8 @@ void main()
 	if (idx == 0)
 	{
 		atomicExchange(uboOut.drawCount, 0);
+		atomicExchange(uboOut.occluded, 0);
+		atomicExchange(uboOut.primitiveCount, 0);
 		for (uint i = 0; i < MAX_LOD_LEVEL + 1; i++)
 		{
 			atomicExchange(uboOut.lodCount[i], 0);
@@ -93,10 +142,16 @@ void main()
 	// Check if object is within current viewing frustum
 	if (frustumCheck(pos, 1.0))
 	{
-		indirectDraws[idx].instanceCount = 1;
-		
+		if(!occlusionCheck(pos, 1.0))
+		{
+			atomicAdd(uboOut.occluded, 1);
+			return;
+		}
 		// Increase number of indirect draw counts
-		atomicAdd(uboOut.drawCount, 1);
+		uint commandIdx = atomicAdd(uboOut.drawCount, 1);
+
+		indirectDraws[commandIdx].instanceCount = 1;
+		indirectDraws[commandIdx].firstInstance = idx;
 
 		// Select appropriate LOD level based on distance to camera
 		uint lodLevel = MAX_LOD_LEVEL;
@@ -108,13 +163,10 @@ void main()
 				break;
 			}
 		}
-		indirectDraws[idx].firstIndex = lods[lodLevel].firstIndex;
-		indirectDraws[idx].indexCount = lods[lodLevel].indexCount;
+		indirectDraws[commandIdx].firstIndex = lods[lodLevel].firstIndex;
+		indirectDraws[commandIdx].indexCount = lods[lodLevel].indexCount;
 		// Update stats
 		atomicAdd(uboOut.lodCount[lodLevel], 1);
-	}
-	else
-	{
-		indirectDraws[idx].instanceCount = 0;
+		atomicAdd(uboOut.primitiveCount, lods[lodLevel].indexCount / 3);
 	}
 }
