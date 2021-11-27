@@ -569,10 +569,12 @@ public:
             const uint32_t localSize = 32;
             return (elements + localSize - 1) / localSize;
         };
+        
         vkCmdBindPipeline(compute.commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.depthPyramidPipeline);
         vkCmdBindDescriptorSets(compute.commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.depthPyramidPipelineLayout, 0, 1, &compute.depthPyramidLevelDescriptorSets[0], 0, 0);
         ImageWidthPushConstant push{ glm::vec2(float(levelWidth), float(levelHeight)) };
         vkCmdPushConstants(compute.commandBuffer, compute.depthPyramidPipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(ImageWidthPushConstant), &push);
+        
         vkCmdDispatch(compute.commandBuffer, workGroupSize(levelWidth), workGroupSize(levelHeight), 1);
         for (uint32_t level = 1; level < depthLevelCount; ++level)
         {
@@ -581,7 +583,7 @@ public:
             push.imageSize = glm::vec2(float(levelWidth), float(levelHeight));
             VkMemoryBarrier depthLevelBarrier = vks::initializers::memoryBarrier();
             depthLevelBarrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-            depthLevelBarrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
+            depthLevelBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
             vkCmdPipelineBarrier(
                 compute.commandBuffer,
                 VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
@@ -597,7 +599,7 @@ public:
 
         VkMemoryBarrier depthPyramidCompleteBarrier = vks::initializers::memoryBarrier();
         depthPyramidCompleteBarrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-        depthPyramidCompleteBarrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        depthPyramidCompleteBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
         vkCmdPipelineBarrier(
             compute.commandBuffer,
             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
@@ -646,7 +648,7 @@ public:
         countBufferAcquireBarrier.buffer = indirectDrawCountBuffer.buffer;
         countBufferAcquireBarrier.size = indirectDrawCountBuffer.descriptor.range;
         countBufferAcquireBarrier.srcAccessMask = 0;
-        countBufferAcquireBarrier.dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+        countBufferAcquireBarrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
         countBufferAcquireBarrier.srcQueueFamilyIndex = vulkanDevice->queueFamilyIndices.graphics;
         countBufferAcquireBarrier.dstQueueFamilyIndex = vulkanDevice->queueFamilyIndices.compute;
 
@@ -655,10 +657,29 @@ public:
         vkCmdPipelineBarrier(
             compute.commandBuffer,
             VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT,
-            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT,
             VK_FLAGS_NONE,
             0, nullptr,
             2, indirectCommandsBuffersBarriers,
+            0, nullptr);
+
+        vkCmdFillBuffer(compute.commandBuffer, indirectDrawCountBuffer.buffer, 0, indirectDrawCountBuffer.descriptor.range, 0u);
+
+        VkBufferMemoryBarrier countBufferClearBarrier = vks::initializers::bufferMemoryBarrier();
+        countBufferClearBarrier.buffer = indirectDrawCountBuffer.buffer;
+        countBufferClearBarrier.size = indirectDrawCountBuffer.descriptor.range;
+        countBufferClearBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        countBufferClearBarrier.dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_SHADER_READ_BIT;
+        countBufferClearBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        countBufferClearBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+
+        vkCmdPipelineBarrier(
+            compute.commandBuffer,
+            VK_PIPELINE_STAGE_TRANSFER_BIT,
+            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+            VK_FLAGS_NONE,
+            0, nullptr,
+            1, &countBufferClearBarrier,
             0, nullptr);
 
         vkCmdBindPipeline(compute.commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute.pipeline);

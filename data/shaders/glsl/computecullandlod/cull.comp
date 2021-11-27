@@ -1,4 +1,5 @@
 #version 450
+#extension GL_KHR_vulkan_glsl : enable
 
 layout (constant_id = 0) const int MAX_LOD_LEVEL = 5;
 
@@ -124,7 +125,7 @@ bool occlusionCheck(vec4 pos, float radius)
 void main()
 {
 	uint idx = gl_GlobalInvocationID.x + gl_GlobalInvocationID.y * gl_NumWorkGroups.x * gl_WorkGroupSize.x;
-
+	/*
 	// Clear stats on first invocation
 	if (idx == 0)
 	{
@@ -135,7 +136,7 @@ void main()
 		{
 			atomicExchange(uboOut.lodCount[i], 0);
 		}
-	}
+	}*/
 
 	vec4 pos = vec4(instances[idx].pos.xyz, 1.0);
 
