@@ -229,6 +229,8 @@ data/models/cerberus/*.*
 .DS_Store
 
 # Assets that are part of the asset pack and should not be stored in the repo
+data/models
+data/textures
 data/models/**
 data/textures/**
 data/README_asset_pack.md
