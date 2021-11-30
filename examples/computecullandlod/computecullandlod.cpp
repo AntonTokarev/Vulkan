@@ -539,7 +539,7 @@ public:
 
         VkImageMemoryBarrier depthImageAcquireBarrier = vks::initializers::imageMemoryBarrier();
         depthImageAcquireBarrier.image = depthStencil.image;
-        depthImageAcquireBarrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        depthImageAcquireBarrier.oldLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
         depthImageAcquireBarrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
         depthImageAcquireBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
         if (depthFormat >= VK_FORMAT_D16_UNORM_S8_UINT) {
