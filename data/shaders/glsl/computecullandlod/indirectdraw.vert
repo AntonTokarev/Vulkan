@@ -1,19 +1,35 @@
 #version 450
 
 // Vertex attributes
+/*
 layout (location = 0) in vec4 inPos;
 layout (location = 1) in vec3 inNormal;
 layout (location = 2) in vec3 inColor;
-
+*/
 // Instanced attributes
 layout (location = 4) in vec3 instancePos;
 layout (location = 5) in float instanceScale;
+
+struct Vertex
+{
+	vec4 posXYZnormalX;
+	vec4 normalYZtexUV;
+	vec4 inColor;
+	vec4 joint0;
+	vec4 weight0;
+	vec4 tangent;
+};
 
 layout (binding = 0) uniform UBO 
 {
 	mat4 projection;
 	mat4 modelview;
 } ubo;
+
+layout (binding = 1) readonly buffer Vertices
+{
+	Vertex vertices[];
+};
 
 layout (location = 0) out vec3 outNormal;
 layout (location = 1) out vec3 outColor;
@@ -27,11 +43,13 @@ out gl_PerVertex
 
 void main() 
 {
+	Vertex vert = vertices[gl_VertexIndex];
+	vec3 inColor = vert.inColor.xyz;
 	outColor = inColor;
 		
-	outNormal = inNormal;
+	outNormal = vec3(vert.posXYZnormalX.w, vert.normalYZtexUV.xy);
 	
-	vec4 pos = vec4((inPos.xyz * instanceScale) + instancePos, 1.0);
+	vec4 pos = vec4((vert.posXYZnormalX.xyz * instanceScale) + instancePos, 1.0);
 
 	gl_Position = ubo.projection * ubo.modelview * pos;
 	
