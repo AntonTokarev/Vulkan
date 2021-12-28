@@ -124,7 +124,7 @@ bool occlusionCheck(vec4 pos, float radius)
 	
 	return sphereDepth < depth;
 }
-// #define SUBGROUPS
+ #define SUBGROUPS
 void main()
 {
 	uint idx = gl_GlobalInvocationID.x;
@@ -136,15 +136,15 @@ void main()
 		uint pass = uint(frustumCheck(pos, 1.0) && occlusionCheck(pos, 1.0));
 		#ifdef SUBGROUPS
 		uint localIndex = subgroupExclusiveAdd(pass);
-		uint highestActiveID = subgroupBallotFindMSB(subgroupBallot(true));
+//		uint highestActiveID = subgroupBallotFindMSB(subgroupBallot(true));
 		uint globalIndex = 0;
-		if (highestActiveID == gl_SubgroupInvocationID) 
+		uint totalInGroup = subgroupAdd(pass);
+		if (subgroupElect()) 
 		{
-			uint localAmount = localIndex + pass;
-			globalIndex = atomicAdd(uboOut.drawCount, localAmount);
+			globalIndex = atomicAdd(uboOut.drawCount, totalInGroup);
 		}
 
-		globalIndex = subgroupMax(globalIndex);
+		globalIndex = subgroupBroadcastFirst(globalIndex);
 		uint commandIdx = globalIndex + localIndex;
 		#endif
 		// Increase number of indirect draw counts
