@@ -13,11 +13,7 @@ layout (location = 5) in float instanceScale;
 struct Vertex
 {
 	vec4 posXYZnormalX;
-	vec4 normalYZtexUV;
 	vec4 inColor;
-	vec4 joint0;
-	vec4 weight0;
-	vec4 tangent;
 };
 
 layout (binding = 0) uniform UBO 
@@ -47,7 +43,8 @@ void main()
 	vec3 inColor = vert.inColor.xyz;
 	outColor = inColor;
 		
-	outNormal = vec3(vert.posXYZnormalX.w, vert.normalYZtexUV.xy);
+	uint intNormal = floatBitsToUint(vert.posXYZnormalX.w);
+	outNormal = unpackSnorm4x8(intNormal).xyz;
 	
 	vec4 pos = vec4((vert.posXYZnormalX.xyz * instanceScale) + instancePos, 1.0);
 

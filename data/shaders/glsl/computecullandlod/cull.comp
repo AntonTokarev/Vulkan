@@ -1,5 +1,8 @@
 #version 450
 #extension GL_KHR_vulkan_glsl : enable
+#extension GL_KHR_shader_subgroup_ballot: enable
+#extension GL_KHR_shader_subgroup_arithmetic: enable
+
 
 layout (constant_id = 0) const int MAX_LOD_LEVEL = 5;
 
@@ -64,7 +67,7 @@ layout (binding = 4) readonly buffer LODs
 
 layout (binding = 5) uniform sampler2D depthPyramid;
 
-layout (local_size_x = 16) in;
+layout (local_size_x = 64) in;
 
 bool frustumCheck(vec4 pos, float radius)
 {
@@ -121,53 +124,54 @@ bool occlusionCheck(vec4 pos, float radius)
 	
 	return sphereDepth < depth;
 }
-
+// #define SUBGROUPS
 void main()
 {
-	uint idx = gl_GlobalInvocationID.x + gl_GlobalInvocationID.y * gl_NumWorkGroups.x * gl_WorkGroupSize.x;
-	/*
-	// Clear stats on first invocation
-	if (idx == 0)
+	uint idx = gl_GlobalInvocationID.x;
+	if(idx < 1000000)
 	{
-		atomicExchange(uboOut.drawCount, 0);
-		atomicExchange(uboOut.occluded, 0);
-		atomicExchange(uboOut.primitiveCount, 0);
-		for (uint i = 0; i < MAX_LOD_LEVEL + 1; i++)
-		{
-			atomicExchange(uboOut.lodCount[i], 0);
-		}
-	}*/
+		vec4 pos = vec4(instances[idx].pos.xyz, 1.0);
 
-	vec4 pos = vec4(instances[idx].pos.xyz, 1.0);
-
-	// Check if object is within current viewing frustum
-	if (frustumCheck(pos, 1.0))
-	{
-		if(!occlusionCheck(pos, 1.0))
+		// Check if object is within current viewing frustum
+		uint pass = uint(frustumCheck(pos, 1.0) && occlusionCheck(pos, 1.0));
+		#ifdef SUBGROUPS
+		uint localIndex = subgroupExclusiveAdd(pass);
+		uint highestActiveID = subgroupBallotFindMSB(subgroupBallot(true));
+		uint globalIndex = 0;
+		if (highestActiveID == gl_SubgroupInvocationID) 
 		{
-			atomicAdd(uboOut.occluded, 1);
-			return;
+			uint localAmount = localIndex + pass;
+			globalIndex = atomicAdd(uboOut.drawCount, localAmount);
 		}
+
+		globalIndex = subgroupMax(globalIndex);
+		uint commandIdx = globalIndex + localIndex;
+		#endif
 		// Increase number of indirect draw counts
-		uint commandIdx = atomicAdd(uboOut.drawCount, 1);
-
-		indirectDraws[commandIdx].instanceCount = 1;
-		indirectDraws[commandIdx].firstInstance = idx;
-
-		// Select appropriate LOD level based on distance to camera
-		uint lodLevel = MAX_LOD_LEVEL;
-		for (uint i = 0; i < MAX_LOD_LEVEL; i++)
+		if(pass == 1)
 		{
-			if (distance(instances[idx].pos.xyz, ubo.cameraPos.xyz) < lods[i].distance) 
+		#ifndef SUBGROUPS
+			uint commandIdx = atomicAdd(uboOut.drawCount, 1);
+		#endif
+			indirectDraws[commandIdx].instanceCount = 1;
+			indirectDraws[commandIdx].firstInstance = idx;
+
+			// Select appropriate LOD level based on distance to camera
+			uint lodLevel = MAX_LOD_LEVEL;
+			for (uint i = 0; i < MAX_LOD_LEVEL; i++)
 			{
-				lodLevel = i;
-				break;
+				if (distance(instances[idx].pos.xyz, ubo.cameraPos.xyz) < lods[i].distance) 
+				{
+					lodLevel = i;
+					break;
+				}
 			}
+			lodLevel = MAX_LOD_LEVEL;
+			indirectDraws[commandIdx].firstIndex = lods[lodLevel].firstIndex;
+			indirectDraws[commandIdx].indexCount = lods[lodLevel].indexCount;
+			// Update stats
+	//			atomicAdd(uboOut.lodCount[lodLevel], 1);
+	//			atomicAdd(uboOut.primitiveCount, lods[lodLevel].indexCount / 3);
 		}
-		indirectDraws[commandIdx].firstIndex = lods[lodLevel].firstIndex;
-		indirectDraws[commandIdx].indexCount = lods[lodLevel].indexCount;
-		// Update stats
-		atomicAdd(uboOut.lodCount[lodLevel], 1);
-		atomicAdd(uboOut.primitiveCount, lods[lodLevel].indexCount / 3);
 	}
 }

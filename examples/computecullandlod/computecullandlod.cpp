@@ -130,6 +130,7 @@ public:
 
     VulkanExample() : VulkanExampleBase(ENABLE_VALIDATION)
     {
+        apiVersion = VK_API_VERSION_1_1;
         title = "Vulkan Example - Compute cull and lod";
         camera.type = Camera::CameraType::firstperson;
         camera.setPerspective(60.0f, (float)width / (float)height, 0.1f, 512.0f);
@@ -688,7 +689,7 @@ public:
         // Dispatch the compute job
         // The compute shader will do the frustum culling and adjust the indirect draw calls depending on object visibility.
         // It also determines the lod to use depending on distance to the viewer.
-        vkCmdDispatch(compute.commandBuffer, objectCount / 16, 1, 1);
+        vkCmdDispatch(compute.commandBuffer, objectCount / 64, 1, 1);
 
         // Add memory barrier to ensure that the compute shader has finished writing the indirect command buffer before it's consumed
         indirectCommandsBuffersBarriers[0].srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;

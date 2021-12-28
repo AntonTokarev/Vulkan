@@ -568,18 +568,8 @@ VkVertexInputAttributeDescription vkglTF::Vertex::inputAttributeDescription(uint
 	switch (component) {
 		case VertexComponent::Position: 
 			return VkVertexInputAttributeDescription({ location, binding, VK_FORMAT_R32G32B32_SFLOAT, offsetof(Vertex, pos) });
-		case VertexComponent::Normal:
-			return VkVertexInputAttributeDescription({ location, binding, VK_FORMAT_R32G32B32_SFLOAT, offsetof(Vertex, normal) });
-		case VertexComponent::UV:
-			return VkVertexInputAttributeDescription({ location, binding, VK_FORMAT_R32G32_SFLOAT, offsetof(Vertex, uv) });
 		case VertexComponent::Color:
 			return VkVertexInputAttributeDescription({ location, binding, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(Vertex, color) });
-		case VertexComponent::Tangent:
-			return VkVertexInputAttributeDescription({ location, binding, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(Vertex, tangent)} );
-		case VertexComponent::Joint0:
-			return VkVertexInputAttributeDescription({ location, binding, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(Vertex, joint0) });
-		case VertexComponent::Weight0:
-			return VkVertexInputAttributeDescription({ location, binding, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(Vertex, weight0) });
 		default:
 			return VkVertexInputAttributeDescription({});
 	}
@@ -871,9 +861,10 @@ void vkglTF::Model::loadNode(vkglTF::Node *parent, const tinygltf::Node &node, u
 
 				for (size_t v = 0; v < posAccessor.count; v++) {
 					Vertex vert{};
-					vert.pos = glm::vec4(glm::make_vec3(&bufferPos[v * 3]), 1.0f);
-					vert.normal = glm::normalize(glm::vec3(bufferNormals ? glm::make_vec3(&bufferNormals[v * 3]) : glm::vec3(0.0f)));
-					vert.uv = bufferTexCoords ? glm::make_vec2(&bufferTexCoords[v * 2]) : glm::vec3(0.0f);
+					auto normal = glm::vec4(glm::normalize(glm::vec3(bufferNormals ? glm::make_vec3(&bufferNormals[v * 3]) : glm::vec3(0.0f))), 0.0f);
+					auto normalPacked = glm::packSnorm4x8(normal);
+					auto normalPackedFloat = *reinterpret_cast<float*>(&normalPacked);
+					vert.pos = glm::vec4(glm::make_vec3(&bufferPos[v * 3]), normalPackedFloat);
 					if (bufferColors) {
 						switch (numColorComponents) {
 							case 3: 
@@ -885,9 +876,6 @@ void vkglTF::Model::loadNode(vkglTF::Node *parent, const tinygltf::Node &node, u
 					else {
 						vert.color = glm::vec4(1.0f);
 					}
-					vert.tangent = bufferTangents ? glm::vec4(glm::make_vec4(&bufferTangents[v * 4])) : glm::vec4(0.0f);
-					vert.joint0 = hasSkin ? glm::vec4(glm::make_vec4(&bufferJoints[v * 4])) : glm::vec4(0.0f);
-					vert.weight0 = hasSkin ? glm::make_vec4(&bufferWeights[v * 4]) : glm::vec4(0.0f);
 					vertexBuffer.push_back(vert);
 				}
 			}
@@ -1226,13 +1214,11 @@ void vkglTF::Model::loadFromFile(std::string filename, vks::VulkanDevice *device
 						Vertex& vertex = vertexBuffer[primitive->firstVertex + i];
 						// Pre-transform vertex positions by node-hierarchy
 						if (preTransform) {
-							vertex.pos = glm::vec3(localMatrix * glm::vec4(vertex.pos, 1.0f));
-							vertex.normal = glm::normalize(glm::mat3(localMatrix) * vertex.normal);
+							vertex.pos = glm::vec4(localMatrix * vertex.pos);
 						}
 						// Flip Y-Axis of vertex positions
 						if (flipY) {
 							vertex.pos.y *= -1.0f;
-							vertex.normal.y *= -1.0f;
 						}
 						// Pre-Multiply vertex colors with material base color
 						if (preMultiplyColor) {
