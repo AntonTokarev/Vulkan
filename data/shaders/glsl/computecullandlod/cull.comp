@@ -166,7 +166,7 @@ void main()
 					break;
 				}
 			}
-			lodLevel = MAX_LOD_LEVEL;
+			//lodLevel = MAX_LOD_LEVEL;
 			indirectDraws[commandIdx].firstIndex = lods[lodLevel].firstIndex;
 			indirectDraws[commandIdx].indexCount = lods[lodLevel].indexCount;
 			// Update stats
