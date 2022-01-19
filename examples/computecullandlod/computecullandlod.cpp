@@ -998,6 +998,12 @@ public:
         buildComputeCommandBuffer();
     }
 
+    struct SpecializationData
+    {
+        uint32_t maxLod;
+        uint32_t objectCount;
+    };
+
     void prepareComputeCull()
     {
         vkGetDeviceQueue(device, vulkanDevice->queueFamilyIndices.compute, 0, &compute.queue);
@@ -1109,16 +1115,19 @@ public:
         computePipelineCreateInfo.stage = loadShader(getShadersPath() + "computecullandlod/cull.comp.spv", VK_SHADER_STAGE_COMPUTE_BIT);
 
         // Use specialization constants to pass max. level of detail (determined by no. of meshes)
-        VkSpecializationMapEntry specializationEntry{};
-        specializationEntry.constantID = 0;
-        specializationEntry.offset = 0;
-        specializationEntry.size = sizeof(uint32_t);
+        VkSpecializationMapEntry specializationEntries[2];
+        specializationEntries[0].constantID = 0;
+        specializationEntries[0].offset = offsetof(SpecializationData, maxLod);
+        specializationEntries[0].size = sizeof(uint32_t);
+        specializationEntries[1].constantID = 1;
+        specializationEntries[1].offset = offsetof(SpecializationData, objectCount);
+        specializationEntries[1].size = sizeof(uint32_t);
 
-        uint32_t specializationData = static_cast<uint32_t>(lodModel.nodes.size()) - 1;
+        SpecializationData specializationData = { static_cast<uint32_t>(lodModel.nodes.size()) - 1, objectCount };
 
         VkSpecializationInfo specializationInfo;
-        specializationInfo.mapEntryCount = 1;
-        specializationInfo.pMapEntries = &specializationEntry;
+        specializationInfo.mapEntryCount = std::size(specializationEntries);
+        specializationInfo.pMapEntries = specializationEntries;
         specializationInfo.dataSize = sizeof(specializationData);
         specializationInfo.pData = &specializationData;
 

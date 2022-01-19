@@ -4,7 +4,8 @@
 #extension GL_KHR_shader_subgroup_arithmetic: enable
 
 
-layout (constant_id = 0) const int MAX_LOD_LEVEL = 5;
+layout (constant_id = 0) const uint MAX_LOD_LEVEL = 5;
+layout (constant_id = 1) const uint OBJECT_COUNT = 0;
 
 struct InstanceData 
 {
