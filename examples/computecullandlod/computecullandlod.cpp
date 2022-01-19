@@ -23,6 +23,7 @@
 #endif
 
 #define MAX_LOD_LEVEL 5
+#define CULL_WORKGROUPS_SIZE 64u
 
 constexpr uint32_t ceil2(uint32_t x)
 {
@@ -94,7 +95,7 @@ public:
     VkDescriptorSet descriptorSet;
     VkDescriptorSetLayout descriptorSetLayout;
 
-
+    uint32_t deviceSubgroupSize;
 
     // Resources for the compute part of the example
     struct {
@@ -458,7 +459,7 @@ public:
 
             vkCmdBindIndexBuffer(drawCmdBuffers[i], lodModel.indices.buffer, 0, VK_INDEX_TYPE_UINT32);
 
-            vkCmdDrawIndexedIndirectCountKHR(drawCmdBuffers[i], indirectCommandsBuffer.buffer, 0, indirectDrawCountBuffer.buffer, 0, indirectCommands.size(), sizeof(VkDrawIndexedIndirectCommand));
+//            vkCmdDrawIndexedIndirectCountKHR(drawCmdBuffers[i], indirectCommandsBuffer.buffer, 0, indirectDrawCountBuffer.buffer, 0, indirectCommands.size(), sizeof(VkDrawIndexedIndirectCommand));
 
             drawUI(drawCmdBuffers[i]);
 
@@ -689,7 +690,7 @@ public:
         // Dispatch the compute job
         // The compute shader will do the frustum culling and adjust the indirect draw calls depending on object visibility.
         // It also determines the lod to use depending on distance to the viewer.
-        vkCmdDispatch(compute.commandBuffer, objectCount / 64, 1, 1);
+        vkCmdDispatch(compute.commandBuffer, objectCount / CULL_WORKGROUPS_SIZE, 1, 1);
 
         // Add memory barrier to ensure that the compute shader has finished writing the indirect command buffer before it's consumed
         indirectCommandsBuffersBarriers[0].srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
@@ -1002,6 +1003,8 @@ public:
     {
         uint32_t maxLod;
         uint32_t objectCount;
+        uint32_t numSubgroups;
+        uint32_t workgroupSize;
     };
 
     void prepareComputeCull()
@@ -1115,15 +1118,18 @@ public:
         computePipelineCreateInfo.stage = loadShader(getShadersPath() + "computecullandlod/cull.comp.spv", VK_SHADER_STAGE_COMPUTE_BIT);
 
         // Use specialization constants to pass max. level of detail (determined by no. of meshes)
-        VkSpecializationMapEntry specializationEntries[2];
+        VkSpecializationMapEntry specializationEntries[4];
         specializationEntries[0].constantID = 0;
         specializationEntries[0].offset = offsetof(SpecializationData, maxLod);
         specializationEntries[0].size = sizeof(uint32_t);
         specializationEntries[1].constantID = 1;
         specializationEntries[1].offset = offsetof(SpecializationData, objectCount);
         specializationEntries[1].size = sizeof(uint32_t);
+        specializationEntries[2].constantID = 2;
+        specializationEntries[2].offset = offsetof(SpecializationData, numSubgroups);
+        specializationEntries[2].size = sizeof(uint32_t);
 
-        SpecializationData specializationData = { static_cast<uint32_t>(lodModel.nodes.size()) - 1, objectCount };
+        SpecializationData specializationData = { static_cast<uint32_t>(lodModel.nodes.size()) - 1, objectCount, CULL_WORKGROUPS_SIZE / deviceSubgroupSize };
 
         VkSpecializationInfo specializationInfo;
         specializationInfo.mapEntryCount = std::size(specializationEntries);
@@ -1279,6 +1285,17 @@ public:
     {
         VulkanExampleBase::prepare();
         vkCmdDrawIndexedIndirectCountKHR = reinterpret_cast<PFN_vkCmdDrawIndexedIndirectCountKHR>(vkGetDeviceProcAddr(device, "vkCmdDrawIndexedIndirectCountKHR"));
+        VkPhysicalDeviceSubgroupProperties subgroupProperties{};
+        subgroupProperties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_PROPERTIES;
+
+        VkPhysicalDeviceProperties2 deviceProperties2{};
+        deviceProperties2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+        deviceProperties2.pNext = &subgroupProperties;
+
+        vkGetPhysicalDeviceProperties2(physicalDevice, &deviceProperties2);
+
+        deviceSubgroupSize = subgroupProperties.subgroupSize;
+
         loadAssets();
         prepareBuffers();
         setupDescriptorSetLayout();
