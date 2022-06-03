@@ -19,7 +19,7 @@
 #if defined(__ANDROID__)
 #define OBJECT_COUNT 32
 #else
-#define OBJECT_COUNT 100
+#define OBJECT_COUNT 32
 #endif
 
 #define MAX_LOD_LEVEL 5
@@ -128,6 +128,7 @@ public:
     VkDeviceMemory depthPyramidImageMemory;
     std::vector<VkImageView> depthPyramidLevelViews;
     VkImageView depthPyramidImageView;
+    bool hasMinMaxSampler;
 
     VulkanExample() : VulkanExampleBase(ENABLE_VALIDATION)
     {
@@ -141,7 +142,13 @@ public:
         memset(&indirectStats, 0, sizeof(indirectStats));
         enabledInstanceExtensions.push_back(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME);
         enabledInstanceExtensions.push_back(VK_EXT_DEBUG_REPORT_EXTENSION_NAME);
-        enabledDeviceExtensions.push_back(VK_EXT_SAMPLER_FILTER_MINMAX_EXTENSION_NAME);
+    }
+
+    void enableDeviceExtensions() override
+    {
+        hasMinMaxSampler = vulkanDevice->extensionSupported(VK_EXT_SAMPLER_FILTER_MINMAX_EXTENSION_NAME);
+        if (hasMinMaxSampler)
+            enabledDeviceExtensions.push_back(VK_EXT_SAMPLER_FILTER_MINMAX_EXTENSION_NAME);
         enabledDeviceExtensions.push_back(VK_KHR_DRAW_INDIRECT_COUNT_EXTENSION_NAME);
     }
 
@@ -368,9 +375,11 @@ public:
         samplerInfo.maxLod = 16.f;
 //        samplerInfo.mipLodBias = -0.5f;
         samplerInfo.unnormalizedCoordinates = VK_FALSE;
+        
         VkSamplerReductionModeCreateInfo createInfoReduction = { VK_STRUCTURE_TYPE_SAMPLER_REDUCTION_MODE_CREATE_INFO };
         createInfoReduction.reductionMode = VK_SAMPLER_REDUCTION_MODE_MAX;
-        samplerInfo.pNext = &createInfoReduction;
+        if (hasMinMaxSampler)
+            samplerInfo.pNext = &createInfoReduction;
 
         VK_CHECK_RESULT(vkCreateSampler(device, &samplerInfo, nullptr, &compute.depthSampler));
 
@@ -459,7 +468,7 @@ public:
 
             vkCmdBindIndexBuffer(drawCmdBuffers[i], lodModel.indices.buffer, 0, VK_INDEX_TYPE_UINT32);
 
-//            vkCmdDrawIndexedIndirectCountKHR(drawCmdBuffers[i], indirectCommandsBuffer.buffer, 0, indirectDrawCountBuffer.buffer, 0, indirectCommands.size(), sizeof(VkDrawIndexedIndirectCommand));
+            vkCmdDrawIndexedIndirectCountKHR(drawCmdBuffers[i], indirectCommandsBuffer.buffer, 0, indirectDrawCountBuffer.buffer, 0, indirectCommands.size(), sizeof(VkDrawIndexedIndirectCommand));
 
             drawUI(drawCmdBuffers[i]);
 
@@ -1213,8 +1222,10 @@ public:
 
         // Create pipeline
         VkComputePipelineCreateInfo computePipelineCreateInfo = vks::initializers::computePipelineCreateInfo(compute.depthPyramidPipelineLayout, 0);
-        computePipelineCreateInfo.stage = loadShader(getShadersPath() + "computecullandlod/depthreduce.comp.spv", VK_SHADER_STAGE_COMPUTE_BIT);
-
+        if(hasMinMaxSampler)
+            computePipelineCreateInfo.stage = loadShader(getShadersPath() + "computecullandlod/depthreduce.comp.spv", VK_SHADER_STAGE_COMPUTE_BIT);
+        else
+            computePipelineCreateInfo.stage = loadShader(getShadersPath() + "computecullandlod/depthreduce_nominmax.comp.spv", VK_SHADER_STAGE_COMPUTE_BIT);
         VK_CHECK_RESULT(vkCreateComputePipelines(device, pipelineCache, 1, &computePipelineCreateInfo, nullptr, &compute.depthPyramidPipeline));
     }
 

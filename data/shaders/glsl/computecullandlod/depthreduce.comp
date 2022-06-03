@@ -17,7 +17,12 @@ void main()
 	// Sampler is set up to do min reduction, so this computes the minimum depth of a 2x2 texel quad
 	vec2 texelPos = vec2(pos) + vec2(0.5);
 	vec2 texCoord = texelPos / imageSize;
+	#ifndef NO_MIN_MAX
 	float depth = texture(inImage, texCoord).x;
+	#else
+	vec4 depth4 = textureGather(inImage, texCoord);
+	float depth = max(max(depth4.x, depth4.y), max(depth4.z, depth4.w));
+	#endif
 
 	imageStore(outImage, ivec2(pos), vec4(depth));
 }
